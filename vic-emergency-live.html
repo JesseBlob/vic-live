@@ -6,36 +6,28 @@
 <title>Victoria Live Emergency Map</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-  html, body { margin:0; height:100%; background:#000; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#eee; }
-  #map { position:absolute; inset:0; background:#000; }
-  .leaflet-container { background:#000; }
-  /* tweak these two lines to change how the terrain and roads look */
-  .base  { filter:brightness(.3) contrast(1.1); }   /* lower = blacker */
-  .roads  { filter:grayscale(1) brightness(.9); }
+  html, body { margin:0; height:100%; background:#111; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#eee; }
+  #map { position:absolute; inset:0; background:#111; }
+  .leaflet-container { background:#111; }
 
   /* markers */
   .inc-marker { display:flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%;
-    color:var(--c,#f60); background:#17171a; border:2px solid var(--c,#f60); box-shadow:0 0 12px var(--c,#f60); animation:pop .6s cubic-bezier(.34,1.56,.64,1); }
-  @keyframes pop { from{transform:scale(0); opacity:0;} to{transform:scale(1); opacity:1;} }
+    font-size:18px; background:#1d1d1f; border:2px solid var(--c,#f60); box-shadow:0 0 10px var(--c,#f60); }
   .inc-marker.new { animation: pulse 1.4s ease-out 4; }
   @keyframes pulse { 0%{box-shadow:0 0 0 0 var(--c,#f60);} 100%{box-shadow:0 0 0 30px rgba(0,0,0,0);} }
 
   /* featured card */
-  #card { position:absolute; left:16px; bottom:16px; z-index:1000; width:350px; border-radius:14px; overflow:hidden;
-    background:rgba(16,16,18,.94); backdrop-filter:blur(8px); border:1px solid #333; box-shadow:0 8px 30px rgba(0,0,0,.6);
+  #card { position:absolute; left:16px; bottom:16px; z-index:1000; width:300px; padding:14px 16px; border-radius:14px;
+    background:rgba(20,20,22,.92); backdrop-filter:blur(8px); border:1px solid #333; box-shadow:0 8px 30px rgba(0,0,0,.5);
     transform:translateY(20px); opacity:0; transition:all .5s ease; pointer-events:none; }
   #card.show { transform:none; opacity:1; }
-  #card .head { display:flex; gap:12px; align-items:center; padding:14px 16px 10px; border-bottom:1px solid #2a2a2a; }
-  #card .ico { color:var(--c); display:flex; flex:none; }
-  #card .name { font-weight:700; font-size:17px; line-height:1.2; }
-  #card .rows { padding:8px 16px 10px; display:grid; grid-template-columns:auto 1fr; gap:7px 14px; font-size:13px; align-items:center; }
-  #card .k { color:#8a8a90; font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; }
-  #card .v { font-weight:600; text-align:right; }
-  #card .v.na { color:#5d5d63; font-weight:400; }
-  #card .status { padding:2px 10px; border-radius:20px; background:var(--c); color:#000; font-weight:700; display:inline-block; }
-  #card .time { font-variant-numeric:tabular-nums; }
-  #card .foot { position:relative; padding:9px 16px; font-size:12.5px; font-weight:600; background:#0b0b0c; border-top:1px solid #2a2a2a; color:#cfcfd4; }
-  #card .bar { position:absolute; left:0; top:0; height:2px; width:100%; background:var(--c); transform-origin:left; }
+  #card .top { display:flex; gap:12px; align-items:center; }
+  #card .ico { font-size:32px; }
+  #card .name { font-weight:700; font-size:16px; line-height:1.2; }
+  #card .loc { font-size:12px; color:#aaa; margin-top:2px; }
+  #card .row { display:flex; justify-content:space-between; margin-top:12px; font-size:13px; }
+  #card .status { padding:2px 10px; border-radius:20px; background:var(--c,#f60); color:#000; font-weight:700; }
+  #card .time { font-variant-numeric:tabular-nums; font-weight:600; }
 
   /* list */
   #list { position:absolute; right:16px; top:16px; bottom:16px; width:270px; z-index:1000; overflow:auto; border-radius:14px;
@@ -44,7 +36,7 @@
   #list h1 span { float:right; color:#888; font-weight:400; }
   .item { display:flex; gap:10px; padding:9px 14px; border-bottom:1px solid #262626; cursor:pointer; font-size:12.5px; }
   .item:hover { background:#222; }
-  .item .i { display:flex; align-items:center; }
+  .item .i { font-size:20px; }
   .item .n { font-weight:600; }
   .item .s { color:#999; font-size:11.5px; }
   #err { position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:1000; background:#5a1a1a; padding:8px 14px; border-radius:8px; font-size:13px; display:none; }
@@ -68,48 +60,28 @@ const SOURCES = [
   'https://api.allorigins.win/raw?url=' + encodeURIComponent(FEED)
 ];
 const POLL_MS = 30000;      // how often to check for new calls
-const DWELL_MS = 15000;      // how long to stay on a new incident before flying back out
+const DWELL_MS = 9000;      // how long to stay on a new incident before flying back out
 const VIC_BOUNDS = L.latLngBounds([-39.3, 140.8], [-33.9, 150.1]);
 
 const map = L.map('map', { zoomControl:false, attributionControl:true, zoomSnap:0.1, maxBounds:[[-48,105],[-5,160]], minZoom:4 });
-const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
-// 1. base (darkened to near-black with CSS below)
-L.tileLayer(ESRI+'Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-  attribution:'Tiles © Esri | Data: Emergency Victoria', maxZoom:16, className:'base'
-}).addTo(map);
-// 2. roads, visible even zoomed out (highways) and fuller as you zoom in
-L.tileLayer(ESRI+'Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom:16, maxNativeZoom:15, opacity:.75, className:'roads'
-}).addTo(map);
-// 3. place names
-L.tileLayer(ESRI+'Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom:16, opacity:.85
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution:'© OpenStreetMap, © CARTO | Data: Emergency Victoria', maxZoom:18
 }).addTo(map);
 L.control.zoom({position:'topleft'}).addTo(map);
 const overview = () => map.flyToBounds(VIC_BOUNDS, { padding:[40,40], duration:2.5 });
 map.fitBounds(VIC_BOUNDS, { padding:[40,40] });
 
-const PATHS = {
-  fire:'<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
-  flood:'<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>',
-  storm:'<path d="M6 16.33A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.97"/><path d="m13 12-3 5h4l-3 5"/>',
-  rescue:'<path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/>',
-  hazard:'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
-  quake:'<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
-  building:'<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
-  siren:'<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M21 12h1"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.93 4.93.7.7"/><path d="m19.07 4.93-.7.7"/>'
-};
-const svg = (key, size=18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PATHS[key]}</svg>`;
 const ICONS = [
-  [/earthquake/i,'quake','#b388ff'], [/bushfire|grass|fire|burn|smoke/i,'fire','#ff5722'],
-  [/flood|tsunami|water/i,'flood','#29b6f6'], [/storm|wind|weather|tree/i,'storm','#7e9cff'],
-  [/rescue|accident|crash|vehicle|medical|health/i,'rescue','#ff4081'], [/hazmat|chemical|gas|hazard/i,'hazard','#c6ff00'],
-  [/structure|building|alarm/i,'building','#ff9800']
+  [/earthquake/i,'🌐','#b388ff'], [/bushfire|grass|fire|burn|smoke/i,'🔥','#ff5722'],
+  [/flood|tsunami|water/i,'🌊','#29b6f6'], [/storm|wind|weather|tree/i,'⛈️','#7e9cff'],
+  [/rescue|accident|crash|vehicle/i,'🚑','#ff4081'], [/hazmat|chemical|gas|hazard/i,'☣️','#c6ff00'],
+  [/structure|building|alarm/i,'🏢','#ff9800'], [/heat|hot/i,'🌡️','#ff7043'],
+  [/medical|health/i,'⚕️','#ff4081'], [/road|traffic/i,'🚧','#ffc107']
 ];
-function styleFor(p, size){
+function styleFor(p){
   const t = [p.category1,p.category2,p.sourceTitle,p.feedType].filter(Boolean).join(' ');
-  for (const [re,key,color] of ICONS) if (re.test(t)) return {icon:svg(key,size), color};
-  return {icon:svg('siren',size), color:'#ff5252'};
+  for (const [re,icon,color] of ICONS) if (re.test(t)) return {icon,color};
+  return {icon:'🚨', color:'#ff5252'};
 }
 
 const markers = new Map();   // id -> marker
@@ -160,7 +132,7 @@ function addMarker(id, p, ll, isNew){
     html:`<div class="inc-marker ${isNew?'new':''}" style="--c:${color}">${icon}</div>`
   })}).addTo(map);
   m.bindTooltip(()=>`<b>${esc(nameOf(p))}</b><br>${esc(statusOf(p))} · ${ago(callTime(p))}`, {direction:'top', offset:[0,-14]});
-  m.on('click', ()=> manualFocus(id));
+  m.on('click', ()=> focusIncident(id, true));
   markers.set(id, m);
 }
 
@@ -189,80 +161,31 @@ function update(features){
   runQueue();
 }
 
-
-// --- CFA district / radio channel (APPROXIMATE) ------------------------------------
-// The feed has no district info, so this picks the nearest district centre from the CFA district map.
-// It's a guess near boundaries. For exact results, swap in real CFA boundary polygons.
-const CFA_DISTRICTS = [[18,-35.26,142.24],[20,-36.34,144.12],[17,-36.59,141.74],[16,-37.33,143.03],[2,-37.15,144.32],[22,-36.51,145.51],[24,-36.65,147.27],[23,-36.98,146.27],[12,-37.41,145.39],[11,-37.7,148.0],[15,-37.83,144.01],[14,-37.85,144.71],[13,-37.91,145.69],[10,-38.14,146.9],[9,-38.49,146.13],[27,-38.52,146.55],[8,-38.43,145.42],[7,-38.41,144.24],[6,-38.52,143.39],[5,-38.0,142.24],[4,-38.05,141.4]];
-const kmBetween = (a,b,c,d) => { const x=(d-b)*Math.cos((a+c)/2*Math.PI/180), y=c-a; return Math.hypot(x,y)*111.2; };
-function districtFor(lat, lng){
-  if (kmBetween(lat,lng,-37.81,144.96) < 14) return 'MFB';     // inner Melbourne = Metropolitan Fire Brigade
-  let best=null, bd=1e9;
-  for (const [d,la,lo] of CFA_DISTRICTS){ const k=kmBetween(lat,lng,la,lo); if (k<bd){bd=k; best=d;} }
-  return best;
-}
-const pick = (p, keys) => keys.map(k => p[k]).find(v => v);
 function showCard(id){
   const inc = incidents.get(id); if (!inc) return;
-  const {p} = inc, {icon,color} = styleFor(p,36);
-  const melway   = pick(p, ['melway','melwayRef','melwayReference','melway_ref','mapRef']);
-  const feedDist = pick(p, ['district','cfaDistrict','fireDistrict']);
-  const feedRadio= pick(p, ['radioChannel','radio','channel','radioCh']);
-  const guess    = districtFor(inc.ll[0], inc.ll[1]);
-  const district = feedDist || (guess === 'MFB' ? 'MFB' : '≈ ' + guess);
-  const radio    = feedRadio || (guess === 'MFB' ? 'MFB' : '≈ ' + guess);
-  const coords   = inc.ll[0].toFixed(4) + ', ' + inc.ll[1].toFixed(4);
-  const row = (k, v) => `<div class="k">${k}</div><div class="v ${v?'':'na'}">${v?esc(v):'Not in feed'}</div>`;
+  const {p} = inc, {icon,color} = styleFor(p);
   const card = document.getElementById('card');
   card.style.setProperty('--c', color);
   card.innerHTML = `
-    <div class="head"><div class="ico">${icon}</div><div class="name">${esc(nameOf(p))}</div></div>
-    <div class="rows">
-      <div class="k">Status</div><div class="v"><span class="status">${esc(statusOf(p))}</span></div>
-      ${row('Location', p.location || p.sourceTitle)}
-      ${row(melway ? 'Melway' : 'Lat, Long', melway || coords)}
-      ${row('District', district)}
-      ${row('Radio channel', radio)}
-      <div class="k">Time since call</div><div class="v time">${ago(callTime(p))} ago</div>
-    </div>
-    <div class="foot"><div class="bar" id="bar"></div><span id="cd"></span></div>`;
+    <div class="top"><div class="ico">${icon}</div>
+      <div><div class="name">${esc(nameOf(p))}</div><div class="loc">${esc(p.location || p.sourceTitle || '')}</div></div></div>
+    <div class="row"><span class="status">${esc(statusOf(p))}</span><span class="time" data-id="${esc(id)}">${ago(callTime(p))} ago</span></div>`;
   card.dataset.id = id;
   card.classList.add('show');
 }
 function hideCard(){ document.getElementById('card').classList.remove('show'); }
 
-let cancelFocus = null;
-function focusIncident(id){
-  const inc = incidents.get(id); if (!inc) return Promise.resolve('skipped');
-  if (cancelFocus) cancelFocus();
+function focusIncident(id, manual){
+  const inc = incidents.get(id); if (!inc) return Promise.resolve();
   showCard(id);
   map.flyTo(inc.ll, 11, { duration:2.8, easeLinearity:0.2 });
-  return new Promise(res => {
-    let left = DWELL_MS/1000, t;
-    const bar = document.getElementById('bar');
-    if (bar) { bar.style.transition='none'; bar.style.transform='scaleX(1)';
-      requestAnimationFrame(()=>requestAnimationFrame(()=>{ bar.style.transition=`transform ${DWELL_MS}ms linear`; bar.style.transform='scaleX(0)'; })); }
-    const tick = () => {
-      const cd = document.getElementById('cd');
-      if (cd) cd.textContent = `${left}s until ${queue.length ? 'next call' : 'whole state view'}`;
-      if (left-- <= 0){ clearInterval(t); cancelFocus = null; res('done'); }
-    };
-    cancelFocus = () => { clearInterval(t); res('cancelled'); };
-    tick(); t = setInterval(tick, 1000);
-  });
-}
-
-// clicking a marker or list item: show it for 15s, then back to the whole state
-function manualFocus(id){
-  queue.length = 0;
-  focusIncident(id).then(r => { if (r === 'done' && !busy){ hideCard(); overview(); } });
+  return new Promise(res => setTimeout(res, manual ? 6000 : DWELL_MS));
 }
 
 async function runQueue(){
   if (busy) return; busy = true;
   while (queue.length){
-    const r = await focusIncident(queue.shift());
-    if (r === 'cancelled'){ busy = false; return; }
+    await focusIncident(queue.shift(), false);
   }
   hideCard(); overview();
   busy = false;
@@ -272,11 +195,11 @@ function renderList(){
   const arr = [...incidents.entries()].sort((a,b)=> new Date(callTime(b[1].p)) - new Date(callTime(a[1].p))).slice(0,60);
   document.getElementById('count').textContent = incidents.size;
   document.getElementById('items').innerHTML = arr.map(([id,{p}])=>{
-    const {icon,color} = styleFor(p,22);
-    return `<div class="item" data-id="${esc(id)}"><div class="i" style="color:${color}">${icon}</div><div><div class="n">${esc(nameOf(p))}</div>
+    const {icon} = styleFor(p);
+    return `<div class="item" data-id="${esc(id)}"><div class="i">${icon}</div><div><div class="n">${esc(nameOf(p))}</div>
       <div class="s">${esc(statusOf(p))} · <span class="t" data-t="${esc(callTime(p))}">${ago(callTime(p))}</span></div></div></div>`;
   }).join('');
-  document.querySelectorAll('.item').forEach(el => el.onclick = ()=> manualFocus(el.dataset.id));
+  document.querySelectorAll('.item').forEach(el => el.onclick = ()=> { queue.length = 0; focusIncident(el.dataset.id, true).then(()=>{ if(!queue.length){hideCard(); overview();} }); });
 }
 
 // live "time since call" ticker
